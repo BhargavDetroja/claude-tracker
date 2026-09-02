@@ -108,7 +108,7 @@ There is no signed release. You build the app yourself, which takes about a
 minute and produces an app macOS opens without any warning.
 
 ```bash
-git clone https://github.com/OWNER/claude-tracker.git
+git clone https://github.com/BhargavDetroja/claude-tracker.git
 cd claude-tracker
 
 composer setup
