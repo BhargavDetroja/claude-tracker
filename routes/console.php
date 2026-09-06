@@ -4,11 +4,17 @@ use App\Console\Commands\PollClaudeUsage;
 use Illuminate\Support\Facades\Schedule;
 
 /**
- * NativePHP runs `schedule:run` once a minute for us, so this is all the
- * background polling the app needs. Switch to everyThirtySeconds() for a
- * tighter refresh: Laravel keeps the scheduler process alive for the whole
- * minute to service sub-minute tasks, which costs one long-lived PHP process.
+ * The second line of defence.
+ *
+ * The primary poller is the supervised `claude:watch` child process started in
+ * NativeAppServiceProvider. This scheduled run covers the case where that
+ * process is not running, and backs off when the watcher has already produced
+ * a fresh reading, so the two never both call Anthropic in the same minute.
+ *
+ * NativePHP drives `schedule:run` from a timer in Electron's main process,
+ * which macOS can throttle and which stops on sleep. That is exactly why it is
+ * the fallback here rather than the thing the app depends on.
  */
-Schedule::command(PollClaudeUsage::class)
+Schedule::command(PollClaudeUsage::class, ['--if-stale' => config('claude.stale_after')])
     ->everyMinute()
     ->withoutOverlapping();

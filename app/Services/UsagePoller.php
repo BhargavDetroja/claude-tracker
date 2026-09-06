@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Events\UsageUpdated;
 use App\Exceptions\UsageUnavailable;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Native\Desktop\Facades\MenuBar;
@@ -40,6 +41,24 @@ class UsagePoller
         UsageUpdated::dispatch($snapshot);
 
         return $snapshot;
+    }
+
+    /**
+     * Poll only if the last reading has aged past the given number of seconds.
+     *
+     * Both the watcher and the scheduler call this, so either one stalling
+     * leaves the other still updating, while a healthy pair does not double
+     * the requests to Anthropic.
+     */
+    public function pollIfStale(int $maximumAge): UsageSnapshot
+    {
+        $last = $this->lastKnown();
+
+        $isFresh = $last !== null
+            && ! $last->isStale
+            && $last->fetchedAt->diffInSeconds(CarbonImmutable::now()) < $maximumAge;
+
+        return $isFresh ? $last : $this->poll();
     }
 
     /**

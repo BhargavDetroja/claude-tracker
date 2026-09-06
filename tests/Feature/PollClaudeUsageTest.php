@@ -2,6 +2,7 @@
 
 use App\Events\UsageUpdated;
 use App\Services\UsagePoller;
+use App\Services\UsageSnapshot;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -129,4 +130,70 @@ it('runs from the console and reports both windows', function () {
         ->expectsOutputToContain('42%')
         ->expectsOutputToContain('13%')
         ->assertSuccessful();
+});
+
+/**
+ * Seed a reading straight into the cache, so a test can control its age
+ * without spending a fake HTTP call to create one.
+ */
+function storeReading(float $fiveHour = 42.0, float $sevenDay = 13.0): void
+{
+    Cache::forever(
+        config('claude.cache_key'),
+        UsageSnapshot::fromApiResponse(claudeUsagePayload($fiveHour, $sevenDay))->toArray(),
+    );
+}
+
+it('leaves Anthropic alone when the last reading is still fresh', function () {
+    storeReading(42.0, 13.0);
+    fakeKeychain();
+    Http::fake();
+
+    $snapshot = app(UsagePoller::class)->pollIfStale(45);
+
+    expect($snapshot->fiveHourPercent)->toBe(42.0);
+
+    /** The watcher and the scheduler both call this, a minute apart. */
+    Http::assertNothingSent();
+});
+
+it('polls once the last reading has aged out', function () {
+    storeReading(42.0, 13.0);
+    fakeKeychain();
+    Http::fake(['api.anthropic.com/*' => Http::response(claudeUsagePayload(77.0, 21.0))]);
+
+    $this->travel(90)->seconds();
+
+    expect(app(UsagePoller::class)->pollIfStale(45)->fiveHourPercent)->toBe(77.0);
+});
+
+it('polls when there has never been a reading', function () {
+    fakeKeychain();
+    Http::fake(['api.anthropic.com/*' => Http::response(claudeUsagePayload(55.0, 9.0))]);
+
+    expect(app(UsagePoller::class)->pollIfStale(45)->fiveHourPercent)->toBe(55.0);
+});
+
+it('retries a stale reading even when it is recent', function () {
+    Cache::forever(
+        config('claude.cache_key'),
+        UsageSnapshot::fromApiResponse(claudeUsagePayload(42.0, 13.0))
+            ->markStale('Endpoint unreachable.')
+            ->toArray(),
+    );
+    fakeKeychain();
+    Http::fake(['api.anthropic.com/*' => Http::response(claudeUsagePayload(63.0, 17.0))]);
+
+    /** A failed check should be retried promptly, not left for the full window. */
+    expect(app(UsagePoller::class)->pollIfStale(45)->fiveHourPercent)->toBe(63.0);
+});
+
+it('backs off from the console when asked to only poll stale readings', function () {
+    storeReading(42.0, 13.0);
+    fakeKeychain();
+    Http::fake();
+
+    $this->artisan('claude:poll-usage', ['--if-stale' => 45])->assertSuccessful();
+
+    Http::assertNothingSent();
 });

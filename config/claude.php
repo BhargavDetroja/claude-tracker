@@ -28,6 +28,20 @@ return [
     'menu_bar_metric' => env('CLAUDE_MENU_BAR_METRIC', 'five_hour'),
 
     /**
+     * Seconds between checks in the background watcher.
+     */
+    'poll_interval' => (int) env('CLAUDE_POLL_INTERVAL', 60),
+
+    /**
+     * A reading younger than this is considered fresh enough to skip.
+     *
+     * Two things poll: the supervised watcher and the scheduler. Whichever
+     * fires first does the work and the other becomes a no-op, so the app is
+     * covered if either mechanism stalls without doubling the API calls.
+     */
+    'stale_after' => (int) env('CLAUDE_STALE_AFTER', 45),
+
+    /**
      * Where the last good reading is kept so the UI can degrade to
      * "last known" instead of blanking when a poll fails.
      */

@@ -7,13 +7,17 @@ use Illuminate\Console\Command;
 
 class PollClaudeUsage extends Command
 {
-    protected $signature = 'claude:poll-usage';
+    protected $signature = 'claude:poll-usage {--if-stale= : Only poll when the last reading is older than this many seconds}';
 
     protected $description = "Read Claude Code's usage limits and update the menu bar";
 
     public function handle(UsagePoller $poller): int
     {
-        $snapshot = $poller->poll();
+        $maximumAge = $this->option('if-stale');
+
+        $snapshot = $maximumAge === null
+            ? $poller->poll()
+            : $poller->pollIfStale((int) $maximumAge);
 
         if ($snapshot->error !== null) {
             $this->components->warn($snapshot->error);

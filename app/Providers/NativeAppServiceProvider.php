@@ -36,12 +36,20 @@ class NativeAppServiceProvider implements ProvidesPhpIni
             ));
 
         /**
-         * Take a first reading straight away rather than waiting up to a
-         * minute for the scheduler. It runs as a child process because the
-         * very first Keychain read raises a macOS access prompt, and blocking
-         * boot on that would leave the menu bar item unresponsive behind it.
+         * The app's polling lives here, in a process NativePHP supervises and
+         * restarts, rather than in the Laravel scheduler alone.
+         *
+         * The scheduler is driven by a timer in Electron's main process, which
+         * macOS App Nap can throttle for a menu bar app with no visible window,
+         * and which NativePHP stops on sleep. A child process is not the UI
+         * process, so it avoids both. It also takes the first reading
+         * immediately, which the scheduler alone would delay by up to a minute.
+         *
+         * It runs as a child process for one more reason: the very first
+         * Keychain read raises a macOS access prompt, and blocking boot on that
+         * would leave the menu bar item unresponsive behind it.
          */
-        ChildProcess::artisan(['claude:poll-usage'], 'initial-usage-poll');
+        ChildProcess::artisan(['claude:watch'], 'usage-watcher', persistent: true);
     }
 
     /**

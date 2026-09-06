@@ -202,7 +202,7 @@ minute tasks.
 
 ## How it works
 
-Once a minute the scheduler runs `claude:poll-usage`, which:
+A supervised background process, `claude:watch`, checks once a minute. It:
 
 1. Reads the OAuth token from the Keychain under `Claude Code-credentials`.
 2. Asks Anthropic for your usage, using the same endpoint Claude Code calls for
@@ -213,6 +213,19 @@ Once a minute the scheduler runs `claude:poll-usage`, which:
 The panel also re reads the local cache every fifteen seconds while it is open,
 so it stays current even if an IPC message is missed. That read never leaves
 your machine.
+
+### Why a child process rather than the scheduler
+
+NativePHP drives Laravel's scheduler from a timer in Electron's main process.
+For a menu bar app with no visible window that timer is a poor bet: macOS App
+Nap is free to throttle it, and NativePHP deliberately stops the scheduler when
+the machine sleeps, restarting it only if the resume event arrives cleanly.
+
+`claude:watch` runs as a persistent child process instead. It is not the UI
+process, so App Nap does not target it, a sleeping machine simply pauses it,
+and NativePHP restarts it if it ever dies. The scheduler still runs alongside as
+a fallback, and both call `pollIfStale()`, so whichever fires first does the
+work and the other backs off rather than doubling the requests to Anthropic.
 
 ### About that endpoint
 
